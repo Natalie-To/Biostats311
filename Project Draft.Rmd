@@ -1,0 +1,401 @@
+---
+title: "Final Report"
+output:
+  html_document: default
+  pdf_document: default
+date: "2023-05-17"
+---
+
+## R Code
+
+```{r}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(pROC)
+library(knitr)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+```
+
+```{r}
+data <- read_csv("data.csv")
+
+data <- data %>% mutate(diagnosis = ifelse(diagnosis =="M", "Malignant", "Benign"))
+
+num_data <- data %>% mutate(diagnosis = ifelse(diagnosis == "Malignant", 1, 0))
+```
+
+```{r}
+# size descriptive
+
+data %>% ggplot(aes(x = diagnosis, y = area_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Area",
+       title = "Diagnosis Based on Mean Area") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+summary_stats_area <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_area = median(area_mean),
+    mean_area = mean(area_mean),
+    min_area = min(area_mean),
+    max_area = max(area_mean),
+    q1_area = quantile(area_mean, 0.25),
+    q3_area = quantile(area_mean, 0.75)
+  )
+
+summary_stats_area
+
+data %>% ggplot(aes(x = diagnosis, y = perimeter_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Perimeter",
+       title = "Diagnosis Based on Mean Perimeter") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+summary_stats_peri <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_perimeter = median(perimeter_mean),
+    mean_perimeter = mean(perimeter_mean),
+    min_perimeter = min(perimeter_mean),
+    max_perimeter = max(perimeter_mean),
+    q1_perimeter = quantile(perimeter_mean, 0.25),
+    q3_perimeter = quantile(perimeter_mean, 0.75)
+  )
+
+summary_stats_peri
+
+data %>% ggplot(aes(x = diagnosis, y = radius_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Radius",
+       title = "Diagnosis Based on Mean Radius") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+
+summary_stats_rad <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_radius = median(radius_mean),
+    mean_radius = mean(radius_mean),
+    min_radius = min(radius_mean),
+    max_radius = max(radius_mean),
+    q1_radius = quantile(radius_mean, 0.25),
+    q3_radius = quantile(radius_mean, 0.75)
+  )
+
+summary_stats_rad
+
+```
+
+```{r}
+### predictive model: mean area only 
+size_mod <- glm(formula = diagnosis ~ area_mean, data = num_data, family = binomial())
+summary(size_mod)
+exp(coef(size_mod))
+exp(confint(size_mod))
+
+  
+set.seed(10000)
+values <- c(rep(0, ceiling(0.7 * nrow(num_data))),
+            rep(1, floor (0.3 * nrow (num_data))))
+test <- sample(values)
+test_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 1)
+train_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 0)
+
+
+mod_area <- glm(diagnosis ~ area_mean, data = train_df, family = binomial())
+
+predictions <- predict(mod_area, newdata = test_df, type = "response")
+
+
+roc(test_df$diagnosis,
+    predictions,
+    plot = TRUE,
+    auc.polygon = TRUE,
+    max.auc.polygon = TRUE,
+    grid = TRUE,
+    print.auc = TRUE)
+
+
+```
+
+```{r}
+# perimeter + radius adjustments descriptive analyses
+data %>% ggplot(aes(x = radius_mean, y = area_mean, col = diagnosis)) +
+  geom_point() +
+  geom_smooth(se = FALSE, linewidth = 2, method = lm) +
+  labs(x = "Mean Radius",
+       y = "Mean Area",
+       title = "Diagnosis Based on Mean Radius vs Mean Area")
+
+data %>% ggplot(aes(x = perimeter_mean, y = area_mean, col = diagnosis)) +
+  geom_point() +
+  geom_smooth(se = FALSE, linewidth = 2, method = lm) +
+  labs(x = "Mean Perimeter",
+       y = "Mean Area",
+       title = "Diagnosis Based on Mean Perimeter vs Mean Area")
+
+data %>% ggplot(aes(x = radius_mean, y = perimeter_mean, col = diagnosis)) +
+  geom_point() +
+  geom_smooth(se = FALSE, linewidth = 2, method = lm) +
+  labs(x = "Mean Radius",
+       y = "Mean Perimeter",
+       title = "Diagnosis Based on Mean Radius vs Mean Perimeter")
+
+```
+
+```{r}
+# perimeter + radius adjustments to prior prediction
+set.seed(10000)
+values <- c(rep(0, ceiling(0.7 * nrow(num_data))),
+            rep(1, floor (0.3 * nrow (num_data))))
+test <- sample(values)
+test_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 1)
+train_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 0)
+
+mod_allsize <- glm(diagnosis ~ area_mean + perimeter_mean + radius_mean, data = train_df, family = binomial())
+
+predictions <- predict(mod_allsize, newdata = test_df, type = "response")
+
+roc(test_df$diagnosis,
+    predictions,
+    plot = TRUE,
+    auc.polygon = TRUE,
+    max.auc.polygon = TRUE,
+    grid = TRUE,
+    print.auc = TRUE)
+
+
+```
+
+```{r}
+#compactness descriptive and prediction
+
+data %>% ggplot(aes(x = diagnosis, y = compactness_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Compactness",
+       title = "Diagnosis Based on Mean Compactness") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+summary_stats_compact <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_compactness = median(compactness_mean),
+    mean_compactness = mean(compactness_mean),
+    min_compactness = min(compactness_mean),
+    max_compactness = max(compactness_mean),
+    q1_compactness = quantile(compactness_mean, 0.25),
+    q3_compactness = quantile(compactness_mean, 0.75)
+  )
+
+summary_stats_compact
+
+compact_mod <- glm(formula = diagnosis ~ compactness_mean, data = num_data, family = binomial())
+summary(compact_mod)
+exp(coef(compact_mod))
+exp(confint(compact_mod))
+
+set.seed(10000)
+values <- c(rep(0, ceiling(0.7 * nrow(num_data))),
+            rep(1, floor (0.3 * nrow(num_data))))
+test <- sample(values)
+test_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 1)
+train_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 0)
+
+mod_compact <- glm(diagnosis ~ compactness_mean, data = train_df, family = binomial())
+
+predictions <- predict(mod_compact, newdata = test_df, type = "response")
+
+roc(test_df$diagnosis,
+    predictions,
+    plot = TRUE,
+    auc.polygon = TRUE,
+    max.auc.polygon = TRUE,
+    grid = TRUE,
+    print.auc = TRUE)
+
+
+
+```
+
+```{r}
+#irregularity descriptive analyses
+
+data %>% ggplot(aes(x = diagnosis, y = fractal_dimension_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Fractal Dimension",
+       title = "Diagnosis Based on Mean Fractal Dimension") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+summary_stats_fd <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_fractal_dimension = median(fractal_dimension_mean),
+    mean_fractal_dimension = mean(fractal_dimension_mean),
+    min_fractal_dimension = min(fractal_dimension_mean),
+    max_fractal_dimension = max(fractal_dimension_mean),
+    q1_fractal_dimension = quantile(fractal_dimension_mean, 0.25),
+    q3_fractal_dimension = quantile(fractal_dimension_mean, 0.75)
+  )
+
+summary_stats_fd
+
+
+data %>% ggplot(aes(x = diagnosis, y = concavity_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Concavity",
+       title = "Diagnosis Based on Mean Concavity") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+summary_stats_concavity <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_concavity = median(concavity_mean),
+    mean_concavity = mean(concavity_mean),
+    min_concavity = min(concavity_mean),
+    max_concavity = max(concavity_mean),
+    q1_concavity = quantile(concavity_mean, 0.25),
+    q3_concavity = quantile(concavity_mean, 0.75)
+  )
+summary_stats_concavity
+
+
+data %>% ggplot(aes(x = diagnosis, y = texture_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Texture",
+       title = "Diagnosis Based on Mean Texture") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+summary_stats_texture <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_texture = median(texture_mean),
+    mean_texture = mean(texture_mean),
+    min_texture = min(texture_mean),
+    max_texture = max(texture_mean),
+    q1_texture = quantile(texture_mean, 0.25),
+    q3_texture = quantile(texture_mean, 0.75)
+  )
+summary_stats_texture
+
+
+data %>% ggplot(aes(x = diagnosis, y = symmetry_mean, col = diagnosis)) +
+  geom_boxplot() +
+  labs(x = "Diagnosis",
+       y = "Mean Symmetry",
+       title = "Diagnosis Based on Mean Symmetry") +
+  scale_color_discrete(name = "Diagnosis",
+                      labels = c("Benign", "Malignant" )) +
+  scale_x_discrete(labels = c("Benign", "Malignant"))
+
+summary_stats_symmetry <- data %>%
+  group_by(diagnosis) %>%
+  summarize(
+    median_symmetry = median(symmetry_mean),
+    mean_symmetry = mean(symmetry_mean),
+    min_symmetry = min(symmetry_mean),
+    max_symmetry = max(symmetry_mean),
+    q1_symmetry = quantile(symmetry_mean, 0.25),
+    q3_symmetry = quantile(symmetry_mean, 0.75)
+  )
+summary_stats_symmetry
+```
+
+```{r}
+#texture prediction
+
+texture_mod <- glm(formula = diagnosis ~ texture_mean, data = num_data, family = binomial())
+summary(texture_mod)
+exp(coef(texture_mod))
+exp(confint(texture_mod))
+
+set.seed(10000)
+values <- c(rep(0, ceiling(0.7 * nrow(num_data))),
+            rep(1, floor (0.3 * nrow(num_data))))
+test <- sample(values)
+test_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 1)
+train_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 0)
+
+mod_texture <- glm(diagnosis ~ texture_mean, data = train_df, family = binomial())
+
+predictions <- predict(mod_texture, newdata = test_df, type = "response")
+
+roc(test_df$diagnosis,
+    predictions,
+    plot = TRUE,
+    auc.polygon = TRUE,
+    max.auc.polygon = TRUE,
+    grid = TRUE,
+    print.auc = TRUE)
+```
+
+```{r}
+#concavity + symmetry adjustment descriptive analyses
+
+data %>% ggplot(aes(x = symmetry_mean, y = concavity_mean, col = diagnosis)) +
+  geom_point() +
+  geom_smooth(se = FALSE, linewidth = 2, method = lm) +
+  labs(x = "Mean Symmetry",
+       y = "Mean Concavity",
+       title = "Diagnosis Based on Mean Symmetry vs Mean Concavity")
+
+data %>% ggplot(aes(x = symmetry_mean, y = texture_mean, col = diagnosis)) +
+  geom_point() +
+  geom_smooth(se = FALSE, linewidth = 2, method = lm) +
+  labs(x = "Mean Symmetry",
+       y = "Mean Texture",
+       title = "Diagnosis Based on Mean Symmetry vs Mean Texture")
+
+data %>% ggplot(aes(x = concavity_mean, y = texture_mean, col = diagnosis)) +
+  geom_point() +
+  geom_smooth(se = FALSE, linewidth = 2, method = lm) +
+  labs(x = "Mean Concavity",
+       y = "Mean Texture",
+       title = "Diagnosis Based on Mean Concavity vs Mean Texture")
+```
+
+```{r}
+# concavity + symmetry adjustments to prior prediction
+set.seed(10000)
+values <- c(rep(0, ceiling(0.7 * nrow(num_data))),
+            rep(1, floor (0.3 * nrow(num_data))))
+test <- sample(values)
+test_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 1)
+train_df <- num_data %>% mutate(test_indicator = test) %>% filter(test_indicator == 0)
+
+mod_irregular <- glm(formula = diagnosis ~ texture_mean + concavity_mean + symmetry_mean, data = train_df, family = binomial())
+
+predictions <- predict(mod_irregular, newdata = test_df, type = "response")
+
+roc(test_df$diagnosis,
+    predictions,
+    plot = TRUE,
+    auc.polygon = TRUE,
+    max.auc.polygon = TRUE,
+    grid = TRUE,
+    print.auc = TRUE)
+
+```
